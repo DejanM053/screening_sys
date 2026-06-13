@@ -1,0 +1,366 @@
+version: "3.9"
+
+networks:
+  sanctions-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  elasticsearch_data:
+  minio_data:
+  ollama_models:
+
+services:
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: sanctions-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sanctions
+      POSTGRES_PASSWORD: sanctions_pass
+      POSTGRES_DB: sanctions_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - sanctions-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sanctions -d sanctions_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: sanctions-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/sanctions_neo4j
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_pagecache_size: 512M
+      NEO4J_dbms_memory_heap_initial__size: 512M
+      NEO4J_dbms_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./infrastructure/neo4j/setup.cypher:/var/lib/neo4j/import/setup.cypher
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    networks:
+      - sanctions-net
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sanctions-redis
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./infrastructure/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    networks:
+      - sanctions-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: sanctions-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - sanctions-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\\|yellow\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: sanctions-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: sanctions_minio
+      MINIO_ROOT_PASSWORD: sanctions_minio_pass
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - sanctions-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  llm-ollama:
+    image: ollama/ollama:latest
+    container_name: sanctions-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - sanctions-net
+    # GPU support (optional — comment out if no NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ─── Domain Services ─────────────────────────────────────────────────────────
+
+  screening-api:
+    build: ./domains/screening-api
+    container_name: sanctions-screening-api
+    restart: unless-stopped
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - REDIS_URL=redis://redis:6379
+      - ENTITY_RESOLUTION_URL=http://entity-resolution:8002
+      - GRAPH_ENGINE_URL=http://graph-engine:8005
+      - REGULATORY_ENGINE_URL=http://regulatory-engine:8003
+      - CRYPTO_SCREENER_URL=http://crypto-screener:8004
+      - LLM_SERVICE_URL=http://llm-service:8006
+      - AUDIT_TRAIL_URL=http://audit-trail:8008
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  entity-resolution:
+    build: ./domains/entity-resolution
+    container_name: sanctions-entity-resolution
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "8002:8002"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  regulatory-engine:
+    build: ./domains/regulatory-engine
+    container_name: sanctions-regulatory-engine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  crypto-screener:
+    build: ./domains/crypto-screener
+    container_name: sanctions-crypto-screener
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - AUDIT_TRAIL_URL=http://audit-trail:8008
+      - TRONSCAN_API_URL=https://apilist.tronscanapi.com/api
+      - ETHERSCAN_API_KEY=${ETHERSCAN_API_KEY:-}
+    ports:
+      - "8004:8004"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  graph-engine:
+    build: ./domains/graph-engine
+    container_name: sanctions-graph-engine
+    restart: unless-stopped
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=sanctions_neo4j
+    ports:
+      - "8005:8005"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  llm-service:
+    build: ./domains/llm-service
+    container_name: sanctions-llm-service
+    restart: unless-stopped
+    environment:
+      - OLLAMA_BASE_URL=http://llm-ollama:11434
+    ports:
+      - "8006:8006"
+    depends_on:
+      llm-ollama:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  list-sync:
+    build: ./domains/list-sync
+    container_name: sanctions-list-sync
+    restart: unless-stopped
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8007
+      - CELERY_BROKER_URL=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  list-sync-worker:
+    build: ./domains/list-sync
+    container_name: sanctions-list-sync-worker
+    restart: unless-stopped
+    command: celery -A app.scheduler worker -l info -Q sanctions_sync
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - CELERY_BROKER_URL=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  list-sync-beat:
+    build: ./domains/list-sync
+    container_name: sanctions-list-sync-beat
+    restart: unless-stopped
+    command: celery -A app.scheduler beat -l info --scheduler celery.beat.PersistentScheduler
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  review-queue:
+    build: ./domains/review-queue
+    container_name: sanctions-review-queue
+    restart: unless-stopped
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - REDIS_URL=redis://redis:6379
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8007
+    ports:
+      - "8009:8009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  audit-trail:
+    build: ./domains/audit-trail
+    container_name: sanctions-audit-trail
+    restart: unless-stopped
+    environment:
+      - POSTGRES_URL=postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=sanctions_minio
+      - MINIO_SECRET_KEY=sanctions_minio_pass
+    ports:
+      - "8008:8008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - sanctions-net
+
+  notification-service:
+    build: ./domains/notification-service
+    container_name: sanctions-notification-service
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SMTP_HOST=${SMTP_HOST:-localhost}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+    ports:
+      - "8007:8007"
+    networks:
+      - sanctions-net
+
+  frontend:
+    build: ./frontend
+    container_name: sanctions-frontend
+    restart: unless-stopped
+    environment:
+      - REACT_APP_API_URL=http://localhost:8001
+      - REACT_APP_REVIEW_QUEUE_URL=http://localhost:8009
+    ports:
+      - "3000:3000"
+    networks:
+      - sanctions-net
