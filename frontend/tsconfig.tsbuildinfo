@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/api/client.ts","./src/components/badges.tsx","./src/components/scoreexplanationcard.tsx","./src/components/sidebar.tsx","./src/pages/casedetail.tsx","./src/pages/mobileapproval.tsx","./src/pages/networkexplorer.tsx","./src/pages/queuedashboard.tsx"],"version":"5.9.3"}

@@ -1,0 +1,104 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "filter": {
+        "edge_ngram_filter": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 20
+        },
+        "double_metaphone_filter": {
+          "type": "phonetic",
+          "encoder": "double_metaphone",
+          "replace": false
+        }
+      },
+      "analyzer": {
+        "edge_ngram_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "edge_ngram_filter"]
+        },
+        "edge_ngram_search_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding"]
+        },
+        "phonetic_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "double_metaphone_filter"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "source_list": { "type": "keyword" },
+      "source_id": { "type": "keyword" },
+      "entity_type": { "type": "keyword" },
+      "primary_name": {
+        "type": "text",
+        "analyzer": "standard",
+        "fields": {
+          "edge_ngram": {
+            "type": "text",
+            "analyzer": "edge_ngram_analyzer",
+            "search_analyzer": "edge_ngram_search_analyzer"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "phonetic_analyzer"
+          },
+          "keyword": { "type": "keyword", "ignore_above": 512 }
+        }
+      },
+      "aliases": {
+        "type": "text",
+        "analyzer": "standard",
+        "fields": {
+          "edge_ngram": {
+            "type": "text",
+            "analyzer": "edge_ngram_analyzer",
+            "search_analyzer": "edge_ngram_search_analyzer"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "phonetic_analyzer"
+          }
+        }
+      },
+      "addresses": {
+        "type": "nested",
+        "properties": {
+          "country": { "type": "keyword" },
+          "city": { "type": "text" },
+          "raw": { "type": "text" }
+        }
+      },
+      "identification": {
+        "type": "nested",
+        "properties": {
+          "type": { "type": "keyword" },
+          "number": { "type": "keyword" },
+          "country": { "type": "keyword" }
+        }
+      },
+      "programs": { "type": "keyword" },
+      "crypto_addresses": {
+        "type": "nested",
+        "properties": {
+          "chain": { "type": "keyword" },
+          "address": { "type": "keyword" }
+        }
+      },
+      "narrative": { "type": "text" },
+      "list_version": { "type": "keyword" },
+      "is_active": { "type": "boolean" },
+      "first_seen_at": { "type": "date" },
+      "last_seen_at": { "type": "date" }
+    }
+  }
+}

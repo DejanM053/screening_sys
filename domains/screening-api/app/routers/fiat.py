@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.models.entities import (
@@ -20,6 +20,8 @@ from app.models.entities import (
     Verdict,
     VerdictEnum,
 )
+from app.models.explanation import ExplanationRecord
+from app.services.explanation import ExplanationTreeBuilder, NetworkContextBuilder
 from app.services.scorer import RawFactors, compute_composite
 from app.services.verdicts import resolve_verdict
 from app.config import settings
@@ -84,6 +86,7 @@ async def _post_audit(payment_id: str, verdict: Verdict, payment: Payment) -> No
 async def screen_fiat_payment(
     req: ScreeningRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
 ) -> ScreeningResult:
     start = time.monotonic()
     payment = req.payment
@@ -133,6 +136,7 @@ async def screen_fiat_payment(
     entity_risk_with_multiplier = min(1.0, entity_risk_base * country_risk_multiplier)
 
     network_score: float = 0.0
+    graph_result: dict = {}
     try:
         graph_result = await _call_graph_engine(payment_id)
         network_score = graph_result.get("network_risk_score", 0.0)
@@ -162,6 +166,22 @@ async def screen_fiat_payment(
         policy_flags=policy_flags,
         jurisdiction_review_threshold=review_threshold,
     )
+
+    tree = ExplanationTreeBuilder.build(verdict=verdict, track_a=track_a, er_result=er_result)
+    network_context = NetworkContextBuilder.build(graph_result=graph_result, verdict=verdict, entity_id=payment_id)
+    verdict.explanation_tree = tree.model_dump()
+
+    explanation_record = ExplanationRecord(
+        payment_id=payment_id,
+        verdict=verdict.verdict.value,
+        track=verdict.track.value,
+        composite_score=verdict.composite_score,
+        tree=tree,
+        network_context=network_context,
+        payment=payment.model_dump(mode="json"),
+        screened_at=verdict.screened_at.isoformat(),
+    )
+    await request.app.state.explanation_store.put(payment_id, explanation_record)
 
     background_tasks.add_task(_post_audit, payment_id, verdict, payment)
 

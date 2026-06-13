@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-EXPOSE 
+EXPOSE 8004
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:/health || exit 1
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", ""]
+  CMD curl -f http://localhost:8004/health || exit 1
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]

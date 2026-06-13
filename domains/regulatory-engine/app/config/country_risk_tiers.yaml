@@ -1,0 +1,69 @@
+# FATF-based country risk tiers (Section 9.3).
+#
+# Maintenance note: the FATF grey list is re-assessed every 4 months
+# (February, June, October plenary). This file is the living configuration —
+# update it after each plenary. The list-sync service's grey-list update
+# script (see app/update_grey_list.py) reads/writes this file.
+#
+# As of June 2026: Bulgaria and Croatia removed (EU members, exited 2023).
+# Venezuela classified under HIGH_RISK only (removed duplicate from GREY).
+
+tiers:
+  BLACK:
+    score_multiplier: 2.0
+    auto_block: true
+    description: "Subject to comprehensive countermeasures — payment block is a Track A legal rule, score irrelevant"
+    countries:
+      - IR  # Iran
+      - KP  # North Korea
+      - MM  # Myanmar
+
+  GREY:
+    score_multiplier: 1.35
+    auto_block: false
+    description: "Enhanced monitoring required"
+    countries:
+      - BF  # Burkina Faso
+      - CM  # Cameroon
+      - CD  # Democratic Republic of Congo
+      - HT  # Haiti
+      - KE  # Kenya
+      - ML  # Mali
+      - MZ  # Mozambique
+      - NG  # Nigeria
+      - PH  # Philippines
+      - SN  # Senegal
+      - ZA  # South Africa
+      - SY  # Syria
+      - TZ  # Tanzania
+      - VN  # Vietnam
+      - YE  # Yemen
+
+  HIGH_RISK:
+    score_multiplier: 1.50
+    auto_block: false
+    description: "Sectoral/comprehensive sanctions programs active"
+    countries:
+      - RU  # Russia
+      - BY  # Belarus
+      - CU  # Cuba
+      - VE  # Venezuela
+
+  OFFSHORE:
+    score_multiplier: 1.20
+    auto_block: false
+    description: "Elevated anonymity risk; deeper UBO check required"
+    countries:
+      - VG  # British Virgin Islands
+      - KY  # Cayman Islands
+      - SC  # Seychelles
+      - PA  # Panama
+      - BZ  # Belize
+      - VU  # Vanuatu
+      - MH  # Marshall Islands
+
+  STANDARD:
+    score_multiplier: 1.0
+    auto_block: false
+    description: "No elevated country risk tier applies"
+    countries: []

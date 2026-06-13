@@ -5,7 +5,7 @@ import time
 import uuid
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
 from app.models.entities import (
@@ -17,6 +17,8 @@ from app.models.entities import (
     UBOResolutionStatus,
     VerdictEnum,
 )
+from app.models.explanation import ExplanationRecord
+from app.services.explanation import ExplanationTreeBuilder, NetworkContextBuilder
 from app.services.scorer import RawFactors, compute_composite
 from app.services.verdicts import resolve_verdict
 from app.config import settings
@@ -34,6 +36,7 @@ class CryptoScreenRequest(BaseModel):
 async def screen_crypto_payment(
     req: CryptoScreenRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
 ) -> ScreeningResult:
     start = time.monotonic()
     payment = req.payment
@@ -100,6 +103,22 @@ async def screen_crypto_payment(
         ubo_status=ubo_status,
         policy_flags=policy_flags,
     )
+
+    tree = ExplanationTreeBuilder.build(verdict=verdict, track_a=track_a, er_result={})
+    network_context = NetworkContextBuilder.build(graph_result=None, verdict=verdict, entity_id=payment_id)
+    verdict.explanation_tree = tree.model_dump()
+
+    explanation_record = ExplanationRecord(
+        payment_id=payment_id,
+        verdict=verdict.verdict.value,
+        track=verdict.track.value,
+        composite_score=verdict.composite_score,
+        tree=tree,
+        network_context=network_context,
+        payment=payment.model_dump(mode="json"),
+        screened_at=verdict.screened_at.isoformat(),
+    )
+    await request.app.state.explanation_store.put(payment_id, explanation_record)
 
     elapsed_ms = (time.monotonic() - start) * 1000
     return ScreeningResult(
