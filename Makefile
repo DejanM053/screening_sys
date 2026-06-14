@@ -1,5 +1,5 @@
 .PHONY: build up down logs test init-models migrate lint fmt \
-        day1-build day1-up day1-down day1-logs seed-demo
+        day1-build day1-up day1-down day1-logs seed-demo seed-queue seed-postgres seed-all
 
 # ── Day-1 (no Neo4j / ES / Minio / Postgres / Ollama) ───────────────────────
 day1-build:
@@ -45,6 +45,17 @@ init-models:
 
 migrate:
 	docker compose exec postgres psql -U sanctions -d sanctions_db -f /docker-entrypoint-initdb.d/init.sql
+	docker exec -i sanctions-postgres psql -U sanctions -d sanctions_db < migrations/add_challenge_system.sql
+
+seed-queue:
+	pip3 install httpx -q --break-system-packages 2>/dev/null; \
+	python3 scripts/seed_review_queue.py
+
+seed-postgres:
+	pip3 install httpx -q --break-system-packages 2>/dev/null; \
+	python3 scripts/seed_postgres_cases.py
+
+seed-all: seed-queue seed-postgres
 
 es-setup:
 	curl -X PUT "http://localhost:9200/sanctions_entities" \

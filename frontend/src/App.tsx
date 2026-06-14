@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { QueueDashboard } from './pages/QueueDashboard';
 import { CaseDetail } from './pages/CaseDetail';
 import { ChallengeReviewPanel } from './components/ChallengeReviewPanel';
+import { NetworkExplorer } from './pages/NetworkExplorer';
 import { screeningApi, QueueItem, Explanation } from './api/screening';
 import { Case, Factor } from './data/cases';
 
-export type View = 'queue' | 'case';
+export type View = 'queue' | 'case' | 'network';
 
 // ─── Factor metadata ─────────────────────────────────────────────────────────
 
@@ -249,7 +250,8 @@ export default function App() {
     });
   };
 
-  const isQueue = view === 'queue';
+  const isQueue   = view === 'queue';
+  const isNetwork = view === 'network';
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#E8EAED' }}>
@@ -265,8 +267,9 @@ export default function App() {
             <span style={{ font: '600 10px/1 \'JetBrains Mono\'', color: '#7E8590', border: '1px solid #2B313B', borderRadius: 5, padding: '4px 6px' }}>v1.1</span>
           </div>
           <div style={{ display: 'flex', gap: 3, marginLeft: 6, background: 'rgba(255,255,255,0.05)', padding: 4, borderRadius: 11, border: '1px solid rgba(255,255,255,0.05)' }}>
-            <button className="gs-tab" onClick={goQueue} style={{ background: isQueue ? '#fff' : 'transparent', color: isQueue ? '#14171C' : '#9AA0AA', border: 'none', borderRadius: 8, font: '600 12.5px \'Hanken Grotesk\'', padding: '7px 14px', transition: 'all .12s' }}>Review Queue</button>
-            <button className="gs-tab" onClick={() => setView('case')} style={{ background: !isQueue ? '#fff' : 'transparent', color: !isQueue ? '#14171C' : '#9AA0AA', border: 'none', borderRadius: 8, font: '600 12.5px \'Hanken Grotesk\'', padding: '7px 14px', transition: 'all .12s' }}>Case Detail</button>
+            <button className="gs-tab" onClick={goQueue} style={{ background: view === 'queue' ? '#fff' : 'transparent', color: view === 'queue' ? '#14171C' : '#9AA0AA', border: 'none', borderRadius: 8, font: '600 12.5px \'Hanken Grotesk\'', padding: '7px 14px', transition: 'all .12s' }}>Review Queue</button>
+            <button className="gs-tab" onClick={() => setView('case')} style={{ background: view === 'case' ? '#fff' : 'transparent', color: view === 'case' ? '#14171C' : '#9AA0AA', border: 'none', borderRadius: 8, font: '600 12.5px \'Hanken Grotesk\'', padding: '7px 14px', transition: 'all .12s' }}>Case Detail</button>
+            <button className="gs-tab" onClick={() => setView('network')} style={{ background: view === 'network' ? '#fff' : 'transparent', color: view === 'network' ? '#14171C' : '#9AA0AA', border: 'none', borderRadius: 8, font: '600 12.5px \'Hanken Grotesk\'', padding: '7px 14px', transition: 'all .12s' }}>Network Explorer</button>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 15, font: '500 11px \'JetBrains Mono\'', color: '#7E8590' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -287,7 +290,21 @@ export default function App() {
       </div>
 
       {/* CONTENT */}
-      {isQueue ? (
+      {isNetwork ? (
+        activeId && explanations[activeId] ? (
+          <NetworkExplorer explanation={explanations[activeId]!} paymentId={activeId} />
+        ) : (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <span style={{ font: "700 14px 'Hanken Grotesk'", color: '#14171C' }}>No case selected</span>
+            <span style={{ font: "400 12px 'Hanken Grotesk'", color: '#757B86' }}>
+              Open a case from the Review Queue first, then switch to Network Explorer.
+            </span>
+            <button onClick={goQueue} style={{ marginTop: 4, padding: '7px 18px', borderRadius: 9, border: '1px solid #E1E4E9', background: '#fff', font: "600 12px 'Hanken Grotesk'", cursor: 'pointer' }}>
+              Go to Queue
+            </button>
+          </div>
+        )
+      ) : isQueue ? (
         loading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 14px 'Hanken Grotesk'", color: '#757B86' }}>
             Loading queue…
@@ -323,6 +340,7 @@ export default function App() {
               decisions={decisions} setDecision={setDecision}
               onBack={goQueue}
               onChallenge={() => setShowChallenge(v => !v)}
+              onOpenNetwork={() => setView('network')}
             />
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 14px 'Hanken Grotesk'", color: '#757B86' }}>

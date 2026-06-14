@@ -76,11 +76,17 @@ async def _embed(text: str) -> List[float]:
 
 
 def _embed_text(case: AMLCaseXML) -> str:
+    # Exclude reviewer_rationale intentionally: verdict-specific words ("blocked",
+    # "approved") would skew BOW similarity toward same-verdict cases, burying
+    # useful contradictions. Similarity should be based on what the case IS, not
+    # what the analyst concluded.
     parts = [
         case.originator.entity_name,
         case.beneficiary.entity_name,
         " ".join(case.typology_tags),
-        case.reviewer_rationale,
+        case.originator.country_of_incorporation,
+        case.beneficiary.country_of_incorporation,
+        case.product_type,
     ]
     if case.trade_context and case.trade_context.goods_description:
         parts.append(case.trade_context.goods_description)
@@ -279,8 +285,10 @@ async def find_similar(case_id: str) -> List[Dict[str, Any]]:
             "contradicts_current": (row["reviewer_verdict"] or "") != current_verdict,
         })
 
-    scored.sort(key=lambda x: x["similarity_score"], reverse=True)
-    return scored[:5]
+    # Contradiction-first sort: surface contradicting cases at the top even if
+    # their raw cosine score is lower. Within each group, order by similarity.
+    scored.sort(key=lambda x: (x["contradicts_current"], x["similarity_score"]), reverse=True)
+    return scored[:10]
 
 
 @router.post("/{case_id}/challenge")

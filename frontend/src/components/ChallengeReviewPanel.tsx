@@ -57,6 +57,17 @@ const GEO_TABLE: Record<string, Omit<GeoContext, never>> = {
   RU: { FATF_status: 'blacklisted', basel_aml_index_score: 7.8, active_sanctions_programs: ['OFAC-SDN', 'EU-CONSOLIDATED'], export_control_alerts: ['BIS-EAR-RU: Russia export controls'] },
   CN: { FATF_status: 'monitored',   basel_aml_index_score: 5.9, active_sanctions_programs: [], export_control_alerts: [] },
   IR: { FATF_status: 'blacklisted', basel_aml_index_score: 9.1, active_sanctions_programs: ['OFAC-IRAN', 'EU-IRAN', 'UN-SC-1737'], export_control_alerts: [] },
+  NG: { FATF_status: 'greylisted',  basel_aml_index_score: 7.2, active_sanctions_programs: [], export_control_alerts: [] },
+  PK: { FATF_status: 'greylisted',  basel_aml_index_score: 7.6, active_sanctions_programs: [], export_control_alerts: [] },
+  PA: { FATF_status: 'greylisted',  basel_aml_index_score: 6.8, active_sanctions_programs: [], export_control_alerts: [] },
+  KE: { FATF_status: 'greylisted',  basel_aml_index_score: 6.5, active_sanctions_programs: [], export_control_alerts: [] },
+  SY: { FATF_status: 'blacklisted', basel_aml_index_score: 8.9, active_sanctions_programs: ['OFAC-SYRIA', 'EU-CONSOLIDATED'], export_control_alerts: [] },
+  KP: { FATF_status: 'blacklisted', basel_aml_index_score: 9.8, active_sanctions_programs: ['OFAC-DPRK', 'UN-SC-1718', 'UN-SC-2371'], export_control_alerts: ['BIS-CCL: DPRK comprehensive controls'] },
+  VG: { FATF_status: 'monitored',   basel_aml_index_score: 5.3, active_sanctions_programs: [], export_control_alerts: [] },
+  NL: { FATF_status: 'compliant',   basel_aml_index_score: 3.1, active_sanctions_programs: [], export_control_alerts: [] },
+  TR: { FATF_status: 'greylisted',  basel_aml_index_score: 7.0, active_sanctions_programs: [], export_control_alerts: [] },
+  UA: { FATF_status: 'monitored',   basel_aml_index_score: 6.4, active_sanctions_programs: [], export_control_alerts: [] },
+  LB: { FATF_status: 'greylisted',  basel_aml_index_score: 7.4, active_sanctions_programs: ['OFAC-SDGT'], export_control_alerts: [] },
 };
 
 const TYPOLOGY_TAGS = [
@@ -147,6 +158,9 @@ function caseToForm(c: Case, paymentId: string): FormState {
   if (c.track?.includes('50pct') || (f[2]?.score || 0) > 0.5) tags.push('sanctions_adjacent');
   if ((f[1]?.score || 0) > 0.5) tags.push('structuring');
   if ((f[0]?.score || 0) > 0.5) tags.push('layering');
+  if ((c.flags || []).some(fl => /pep/i.test(fl))) tags.push('pep_exposure');
+  if ((c.flags || []).some(fl => /trade|corridor/i.test(fl))) tags.push('trade_based_ml');
+  if (tags.length === 0) tags.push('unknown');
 
   return {
     ...initialForm(),

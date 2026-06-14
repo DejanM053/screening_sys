@@ -10,9 +10,10 @@ interface Props {
   setDecision: (id: string, action: string) => void;
   onBack: () => void;
   onChallenge?: () => void;
+  onOpenNetwork?: () => void;
 }
 
-export function CaseDetail({ cases, activeId, drafts, setDraft, decisions, setDecision, onBack, onChallenge }: Props) {
+export function CaseDetail({ cases, activeId, drafts, setDraft, decisions, setDecision, onBack, onChallenge, onOpenNetwork }: Props) {
   const ac = cases.find(c => c.id === activeId) || cases[0];
   const avm = vMeta(ac.verdict), asm = slaMeta(ac.slaMins);
   const acomp = composite(ac);
@@ -298,7 +299,14 @@ export function CaseDetail({ cases, activeId, drafts, setDraft, decisions, setDe
               <span style={{ font: "700 11px 'Hanken Grotesk'", letterSpacing: '.08em', textTransform: 'uppercase', color: '#757B86' }}>
                 {netNoisy ? 'Network exposure · noisy-OR' : netOwnership ? 'Ownership chain · 50% Rule' : 'Cluster context · shared UBO'}
               </span>
-              <span style={{ font: "500 10px 'JetBrains Mono'", color: '#9AA0AA' }}>{net.id}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ font: "500 10px 'JetBrains Mono'", color: '#9AA0AA' }}>{net.id}</span>
+                {onOpenNetwork && (
+                  <button onClick={onOpenNetwork} style={{ background: '#F0F4FF', color: '#2C7BE5', border: '1px solid #C7D8F8', borderRadius: 6, font: "600 10px 'Hanken Grotesk'", padding: '4px 9px', cursor: 'pointer' }}>
+                    Full Graph →
+                  </button>
+                )}
+              </div>
             </div>
             <div style={{ padding: '18px 16px' }}>
               {netNoisy && (
