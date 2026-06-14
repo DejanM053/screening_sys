@@ -374,22 +374,87 @@ export function ChallengeReviewPanel({
     return () => { if (elapsedRef.current) clearInterval(elapsedRef.current); };
   }, [generatingChallenge]);
 
-  // Typewriter-style demo fill: reveal each field with a short delay so
-  // the audience can see the form being "completed" before auto-submit.
+  // Character-by-character demo fill — realistic typing with natural pauses.
   const runDemo = useCallback(async () => {
     setDemoRunning(true);
     const base = { ...DEMO_FORM, transaction_id: 'REVIEW-TXN-' + Date.now().toString(36).toUpperCase() };
 
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+    // jitter makes it feel human: base speed ± up to 40% variance
+    const jitter = (base_ms: number) => base_ms + (Math.random() - 0.5) * base_ms * 0.4;
 
-    setForm(f => ({ ...f, transaction_id: base.transaction_id })); await delay(600);
-    setForm(f => ({ ...f, amount: base.amount, currency: base.currency })); await delay(600);
-    setForm(f => ({ ...f, product_type: base.product_type, direction: base.direction, has_trade_context: true })); await delay(700);
-    setForm(f => ({ ...f, originator: base.originator })); await delay(900);
-    setForm(f => ({ ...f, beneficiary: base.beneficiary })); await delay(900);
-    setForm(f => ({ ...f, goods_description: base.goods_description, hs_code: base.hs_code, dual_use_flag: true, invoice_amount: base.invoice_amount, shipment_country: base.shipment_country })); await delay(800);
-    setForm(f => ({ ...f, relationship_tenure_days: base.relationship_tenure_days, first_transaction_to_counterparty: true, referral_origin: base.referral_origin })); await delay(700);
-    setForm(f => ({ ...f, typology_tags: base.typology_tags, risk_scores: base.risk_scores, reviewer_verdict: base.reviewer_verdict, reviewer_rationale: base.reviewer_rationale })); await delay(900);
+    const typeText = async (setter: (v: string) => void, text: string, msPerChar = 90) => {
+      for (let i = 1; i <= text.length; i++) {
+        setter(text.slice(0, i));
+        await delay(jitter(msPerChar));
+      }
+      await delay(jitter(300)); // brief pause after each field
+    };
+
+    const typeFormField = (key: keyof FormState, msPerChar?: number) =>
+      typeText(v => setForm(f => ({ ...f, [key]: v })), String(base[key] ?? ''), msPerChar);
+
+    const typeParty = (side: 'originator' | 'beneficiary', key: keyof Party, msPerChar?: number) =>
+      typeText(
+        v => setForm(f => ({ ...f, [side]: { ...f[side], [key]: v } })),
+        String(base[side][key] ?? ''),
+        msPerChar,
+      );
+
+    // ── Transaction header ───────────────────────────────────────────
+    await typeFormField('transaction_id', 95);
+    await typeFormField('amount', 110);
+    await delay(400);
+    // product type is a select — just flip it with a pause
+    setForm(f => ({ ...f, product_type: base.product_type, direction: base.direction, has_trade_context: true }));
+    await delay(jitter(700));
+
+    // ── Originator ──────────────────────────────────────────────────
+    await typeParty('originator', 'entity_name', 85);
+    await typeParty('originator', 'country_of_incorporation', 150);
+    await typeParty('originator', 'account_country', 150);
+    setForm(f => ({ ...f, originator: { ...f.originator, registration_age_days: base.originator.registration_age_days } }));
+    await delay(jitter(600));
+
+    // ── Beneficiary ─────────────────────────────────────────────────
+    await typeParty('beneficiary', 'entity_name', 85);
+    await typeParty('beneficiary', 'country_of_incorporation', 150);
+    await typeParty('beneficiary', 'account_country', 150);
+    setForm(f => ({ ...f, beneficiary: { ...f.beneficiary, registration_age_days: base.beneficiary.registration_age_days, ownership_opacity_score: base.beneficiary.ownership_opacity_score } }));
+    await delay(jitter(600));
+
+    // ── Trade context ────────────────────────────────────────────────
+    await typeFormField('goods_description', 75);
+    await typeFormField('hs_code', 130);
+    await typeFormField('invoice_amount', 110);
+    await typeFormField('shipment_country', 150);
+    setForm(f => ({ ...f, dual_use_flag: true }));
+    await delay(jitter(500));
+
+    // ── Relationship context ─────────────────────────────────────────
+    await typeFormField('relationship_tenure_days', 120);
+    setForm(f => ({ ...f, first_transaction_to_counterparty: true, referral_origin: base.referral_origin }));
+    await delay(jitter(500));
+
+    // ── Typology tags — appear one by one ───────────────────────────
+    for (const tag of base.typology_tags) {
+      setForm(f => ({ ...f, typology_tags: [...f.typology_tags, tag] }));
+      await delay(jitter(500));
+    }
+
+    // ── Risk sliders ─────────────────────────────────────────────────
+    const scoreKeys = ['source_of_wealth', 'document_consistency', 'counterparty_opacity', 'relationship_novelty'] as const;
+    for (const key of scoreKeys) {
+      setForm(f => ({ ...f, risk_scores: { ...f.risk_scores, [key]: base.risk_scores[key] } }));
+      await delay(jitter(400));
+    }
+
+    // ── Verdict select ────────────────────────────────────────────────
+    setForm(f => ({ ...f, reviewer_verdict: base.reviewer_verdict }));
+    await delay(jitter(400));
+
+    // ── Rationale — faster typing, it's long ─────────────────────────
+    await typeFormField('reviewer_rationale', 35);
 
     // auto-submit
     setSubmitting(true);
