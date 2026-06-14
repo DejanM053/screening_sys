@@ -106,6 +106,8 @@ class ReviewQueue:
 
         item.status = QueueItemStatus.DECIDED
         item.assigned_to = decision_req.analyst_id
+        item.decision = decision_req.decision
+        item.decided_at = now
         await self._store.put(item.payment_id, item.model_dump_json())
         await self._log_decision(item, decision_req)
         return DecisionResult(payment_id=payment_id, decision=decision_req.decision, requeued=False, item=item)

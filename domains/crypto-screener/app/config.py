@@ -7,9 +7,10 @@ class Settings(BaseSettings):
     regulatory_engine_url: str = "http://regulatory-engine:8003"
 
     tron_rpc_url: str = "https://api.trongrid.io"
+    trongrid_api_key: str = ""
     ethereum_rpc_url: str = "https://eth.llamarpc.com"
     tronscan_api_url: str = "https://apilist.tronscanapi.com"
-    etherscan_api_url: str = "https://api.etherscan.io"
+    etherscan_api_url: str = "https://api.etherscan.io/v2"
     etherscan_api_key: str = ""
 
     # TRC-20 USDT contract on TRON (Section 11.2)

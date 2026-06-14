@@ -73,8 +73,8 @@ class OnChainHopTracer:
         try:
             if chain == "tron":
                 resp = await client.get(
-                    f"{settings.tronscan_api_url}/api/transfer",
-                    params={"address": address, "limit": 20},
+                    f"{settings.tronscan_api_url}/api/token_trc20/transfers",
+                    params={"address": address, "limit": 20, "start": 0},
                 )
             else:
                 resp = await client.get(

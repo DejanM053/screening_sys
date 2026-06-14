@@ -1,5 +1,23 @@
-.PHONY: build up down logs test init-models migrate lint fmt
+.PHONY: build up down logs test init-models migrate lint fmt \
+        day1-build day1-up day1-down day1-logs seed-demo
 
+# ── Day-1 (no Neo4j / ES / Minio / Postgres / Ollama) ───────────────────────
+day1-build:
+	docker compose -f docker-compose.day1.yml build
+
+day1-up:
+	docker compose -f docker-compose.day1.yml up -d
+
+day1-down:
+	docker compose -f docker-compose.day1.yml down
+
+day1-logs:
+	docker compose -f docker-compose.day1.yml logs -f
+
+seed-demo:
+	python3 -m pip install httpx -q --break-system-packages && python3 scripts/seed_demo.py
+
+# ── Full stack ────────────────────────────────────────────────────────────────
 build:
 	docker compose build
 

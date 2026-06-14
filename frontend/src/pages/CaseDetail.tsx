@@ -84,7 +84,7 @@ export function CaseDetail({ cases, activeId, drafts, setDraft, decisions, setDe
         <div style={{ width: 1, height: 28, background: '#E1E4E9' }} />
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <span style={{ font: "800 17px 'Hanken Grotesk'", letterSpacing: '-0.01em' }}>{ac.entity}</span>
+            <span style={{ font: "800 17px 'Hanken Grotesk'", letterSpacing: '-0.01em', color: '#14171C' }}>{ac.entity}</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', background: avm.bg, color: avm.color, font: "700 11px 'Hanken Grotesk'", letterSpacing: '.04em', padding: '4px 10px', borderRadius: 7, border: `1px solid ${avm.border}` }}>{ac.verdict}</span>
             {(ac.flags || []).map(l => { const fm = flagMeta(l); return <span key={l} style={{ font: "600 10px 'JetBrains Mono'", color: fm.color, background: fm.bg, border: `1px solid ${fm.border}`, borderRadius: 5, padding: '3px 7px' }}>{l}</span>; })}
           </div>
@@ -96,12 +96,18 @@ export function CaseDetail({ cases, activeId, drafts, setDraft, decisions, setDe
             <div style={{ font: "600 14px 'JetBrains Mono'", color: asm.color }}>{asm.label}</div>
           </div>
           <div style={{ width: 1, height: 30, background: '#E1E4E9' }} />
-          <div style={{ display: 'flex', gap: 6 }}>
-            {actionButtons.map(a => (
-              <button key={a.label} className="gs-act" onClick={a.onClick} style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.fg, font: "700 11.5px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '9px 13px', borderRadius: 8 }}>{a.label}</button>
-            ))}
-            {onChallenge && (
-              <button onClick={onChallenge} style={{ border: '1px solid #E1E4E9', background: '#F4F6F8', color: '#41464F', font: "700 11.5px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '9px 13px', borderRadius: 8, cursor: 'pointer' }}>Challenge Review</button>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {dec ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: decMeta?.bg ?? '#F3F5F7', color: decMeta?.color ?? '#41464F', border: `1px solid ${decMeta?.border ?? '#E1E4E9'}`, borderRadius: 8, font: "700 11px 'Hanken Grotesk'", padding: '5px 10px', letterSpacing: '.01em' }}>
+                Decision recorded: {dec.action}
+              </span>
+            ) : (
+              actionButtons.map(a => (
+                <button key={a.label} className="gs-act" onClick={a.onClick} style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.fg, font: "700 11px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '4px 8px', borderRadius: 6 }}>{a.label}</button>
+              ))
+            )}
+            {onChallenge && !dec && (
+              <button onClick={onChallenge} style={{ border: '1px solid #E1E4E9', background: '#F4F6F8', color: '#41464F', font: "700 11px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '4px 8px', borderRadius: 6, cursor: 'pointer' }}>Challenge Review</button>
             )}
           </div>
         </div>

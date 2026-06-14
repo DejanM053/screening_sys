@@ -50,6 +50,8 @@ class QueueItem(EnqueueRequest):
     escalated: bool = False
     escalation_reason: Optional[str] = None
     assigned_to: Optional[str] = None
+    decision: Optional[Decision] = None
+    decided_at: Optional[datetime] = None
 
     @property
     def sort_key(self) -> tuple:

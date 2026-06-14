@@ -37,6 +37,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { challengeApi, SimilarCase, ChallengeResult, GeoContext } from '../api/challenge';
+import { screeningApi } from '../api/screening';
 import { Case } from '../data/cases';
 
 // ── Hardcoded geopolitical context (presenter: "pulled from live feeds in prod") ──
@@ -375,6 +376,7 @@ export interface ChallengeReviewPanelProps {
   onClose: () => void;
   onChallengeOpened?: (challengeId: string) => void;
   onChallengeResponded?: (challengeId: string) => void;
+  onCaseEnqueued?: () => void;
 }
 
 export function ChallengeReviewPanel({
@@ -383,6 +385,7 @@ export function ChallengeReviewPanel({
   onClose,
   onChallengeOpened,
   onChallengeResponded,
+  onCaseEnqueued,
 }: ChallengeReviewPanelProps) {
   const [step, setStep] = useState<Step>('form');
   const [form, setForm] = useState<FormState>(() =>
@@ -587,6 +590,32 @@ export function ChallengeReviewPanel({
     try {
       await challengeApi.respond(caseId, challengeResult.challenge_id, responseText);
       onChallengeResponded?.(challengeResult.challenge_id);
+
+      // Compute a normalised risk score from the analyst's assessment sliders
+      const scores = Object.values(form.risk_scores);
+      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length / 10;
+      const uboStatus =
+        form.originator.ownership_opacity_score > 0.6 ? 'UNRESOLVED' :
+        form.originator.ownership_opacity_score > 0.35 ? 'PARTIAL' : 'FULL';
+
+      // Send the case to the review queue so it appears for final CLEAR/BLOCK/ESCALATE
+      try {
+        await screeningApi.enqueueCase({
+          payment_id: form.transaction_id,
+          entity_name: form.originator.entity_name || form.transaction_id,
+          score: Math.min(1, Math.max(0, avgScore)),
+          country: form.beneficiary.country_of_incorporation || form.originator.country_of_incorporation || '',
+          transfer_type: (form.direction || 'OUTBOUND').toUpperCase(),
+          ubo_resolution_status: uboStatus,
+          policy_flags: form.typology_tags,
+          amount_usd: parseFloat(form.amount) || 0,
+          track: 'B:risk',
+        });
+        onCaseEnqueued?.();
+      } catch {
+        // Queue may already contain this case — not fatal
+      }
+
       setResponseSubmitted(true);
     } catch (e: any) {
       setChallengeError(e.message ?? 'Failed to submit response');
@@ -1024,8 +1053,10 @@ export function ChallengeReviewPanel({
                       </button>
                     </>
                   ) : (
-                    <div style={{ background: '#E9F6EE', border: '1px solid #BFE4CC', borderRadius: 9, padding: 14, textAlign: 'center', font: "700 13px 'Hanken Grotesk'", color: '#16A34A' }}>
-                      Response recorded. You may now proceed to your verdict.
+                    <div style={{ background: '#E9F6EE', border: '1px solid #BFE4CC', borderRadius: 9, padding: 14, textAlign: 'center' }}>
+                      <div style={{ font: "700 13px 'Hanken Grotesk'", color: '#16A34A', marginBottom: 6 }}>Challenge response recorded</div>
+                      <div style={{ font: "500 12px 'Hanken Grotesk'", color: '#41464F', marginBottom: 12 }}>Case submitted to review queue — close this panel to make your final verdict.</div>
+                      <button onClick={onClose} style={{ background: '#14171C', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', font: "700 13px 'Hanken Grotesk'", cursor: 'pointer' }}>Back to queue</button>
                     </div>
                   )}
                 </>
