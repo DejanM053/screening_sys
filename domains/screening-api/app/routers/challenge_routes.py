@@ -311,42 +311,35 @@ async def generate_challenge(case_id: str, req: ChallengeRequest) -> Dict[str, A
     geo_cur = cur_row["geopolitical_snapshot"] if isinstance(cur_row["geopolitical_snapshot"], dict) else {}
     geo_sim = sim_row["geopolitical_snapshot"] if isinstance(sim_row["geopolitical_snapshot"], dict) else {}
 
+    # Truncate rationale to keep prompt short enough for fast llama3.2 inference
+    cur_rationale = (cur_case.reviewer_rationale or "")[:200]
+    sim_rationale = (sim_case.reviewer_rationale or "")[:200]
+
+    # Summarise geo context to just FATF status per country
+    def _geo_summary(g: dict) -> str:
+        return ", ".join(
+            f"{cc}:FATF={v.get('FATF_status','?')}" for cc, v in g.items()
+        ) or "unknown"
+
     system_prompt = (
-        "You are a senior AML compliance analyst conducting a structured peer review. "
-        "Your role is not to make the final decision but to surface the strongest possible "
-        "counterarguments to the reviewer's current position. Be specific, cite concrete "
-        "fields from the case data, and reference the historical precedent case where it "
-        "genuinely contradicts the current reasoning. Do not be sycophantic. If the cases "
-        "are genuinely distinguishable, say so clearly and explain why the contradiction is "
-        "not a true contradiction. Keep your response under 300 words and structure it as: "
-        "1) The tension (one sentence), 2) What the precedent case suggests, "
-        "3) The strongest distinguishing argument the reviewer could make, "
-        "4) One question the reviewer must answer before finalizing the decision."
+        "You are a senior AML compliance analyst doing a structured peer review. "
+        "Surface the strongest counterargument to the reviewer's draft verdict in under 200 words. "
+        "Use exactly 4 labelled sections: "
+        "1) Tension, 2) What the precedent suggests, 3) Key distinguishing argument, 4) One question to answer."
     )
 
     user_prompt = (
-        f"CURRENT CASE:\n"
-        f"Transaction ID: {cur_case.transaction_id}\n"
-        f"Amount: {cur_case.amount} {cur_case.currency}\n"
-        f"Typology tags: {', '.join(cur_case.typology_tags)}\n"
-        f"Reviewer's draft verdict: {req.reviewer_draft_verdict}\n"
-        f"Risk scores: {json.dumps(cur_case.risk_scores)}\n"
-        f"Reviewer rationale so far: {cur_case.reviewer_rationale}\n"
-        f"Geopolitical context at review time: {json.dumps(geo_cur)}\n\n"
-        f"PRECEDENT CASE (contradictory verdict):\n"
-        f"Transaction ID: {sim_case.transaction_id}\n"
-        f"Amount: {sim_case.amount} {sim_case.currency}\n"
-        f"Typology tags: {', '.join(sim_case.typology_tags)}\n"
-        f"Verdict: {sim_case.reviewer_verdict}\n"
-        f"Reviewer rationale: {sim_case.reviewer_rationale}\n"
-        f"Geopolitical context at that time: {json.dumps(geo_sim)}\n"
-        f"Similarity score: {similarity_score}\n\n"
-        "Identify the tension between these two decisions and challenge the current "
-        "reviewer's draft verdict."
+        f"CURRENT: {cur_case.transaction_id} | {cur_case.amount} {cur_case.currency} | "
+        f"tags: {', '.join(cur_case.typology_tags)} | draft: {req.reviewer_draft_verdict} | "
+        f"geo: {_geo_summary(geo_cur)} | rationale: {cur_rationale}\n\n"
+        f"PRECEDENT: {sim_case.transaction_id} | {sim_case.amount} {sim_case.currency} | "
+        f"tags: {', '.join(sim_case.typology_tags)} | verdict: {sim_case.reviewer_verdict} | "
+        f"geo: {_geo_summary(geo_sim)} | rationale: {sim_rationale}\n\n"
+        f"Similarity: {similarity_score}. Challenge the draft verdict."
     )
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             r = await client.post(
                 f"{OLLAMA_URL}/api/generate",
                 json={
