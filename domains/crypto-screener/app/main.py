@@ -1,6 +1,7 @@
 """crypto-screener — stablecoin/wallet compliance screening (Section 10, CC-05)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -45,6 +46,16 @@ async def lifespan(app: FastAPI):
         freeze_register=FreezeRiskRegister(store),
         travel_rule=TravelRuleEnforcer(),
     )
+
+    # Kick off OFAC XML sync in background — doesn't block service startup
+    async def _ofac_sync():
+        try:
+            n = await app.state.ofac_screener.sync_from_ofac_xml()
+            logger.info("OFAC startup sync complete: %d addresses loaded", n)
+        except Exception as exc:
+            logger.warning("OFAC startup sync failed: %s", exc)
+
+    asyncio.create_task(_ofac_sync())
 
     yield
 

@@ -22,7 +22,7 @@ from app.models.entities import (
 )
 from app.models.explanation import ExplanationRecord
 from app.services.explanation import ExplanationTreeBuilder, NetworkContextBuilder
-from app.services.scorer import RawFactors, compute_composite
+from app.services.scorer import RawFactors, compute_composite, entity_risk_from_metadata
 from app.services.verdicts import resolve_verdict
 from app.config import settings
 
@@ -82,6 +82,57 @@ async def _post_audit(payment_id: str, verdict: Verdict, payment: Payment) -> No
         pass  # audit failures must not block payment decisions
 
 
+async def _enqueue_review(payment_id: str, verdict: Verdict, payment: Payment) -> None:
+    """POST REVIEW verdicts to the review-queue service."""
+    try:
+        policy_flag_names = []
+        if verdict.policy_flags.mica_compliance_risk:
+            policy_flag_names.append("MiCA_COMPLIANCE_RISK")
+        if verdict.policy_flags.tron_eu_corridor_review:
+            policy_flag_names.append("TRON_EU_CORRIDOR_REVIEW")
+        if verdict.policy_flags.pep_flag:
+            policy_flag_names.append("PEP_FLAG")
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{settings.review_queue_url}/enqueue",
+                json={
+                    "payment_id": payment_id,
+                    "entity_id": payment_id,
+                    "entity_name": payment.originator_name,
+                    "score": verdict.composite_score,
+                    "country": payment.originator_country,
+                    "lists_flagged": [verdict.cause] if verdict.cause else [],
+                    "transfer_type": "OUTBOUND",
+                    "ubo_resolution_status": verdict.ubo_resolution_status.value,
+                    "policy_flags": policy_flag_names,
+                    "amount_usd": payment.amount_usd,
+                    "track": verdict.track.value,
+                },
+            )
+    except Exception:
+        pass  # queue failures must not block payment decisions
+
+
+async def _ingest_graph(payment_id: str, payment: Payment, er_result: dict, track_a_verdict: str) -> None:
+    """Register this entity in the graph-engine so network risk can be computed."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{settings.graph_engine_url}/ingest-entity",
+                json={
+                    "entity_id": payment_id,
+                    "name": payment.originator_name,
+                    "country": payment.originator_country,
+                    "individual_score": er_result.get("top_score", 0.0),
+                    "ubo_resolution_status": er_result.get("ubo_resolution_status", "FULL"),
+                    "track_a_verdict": track_a_verdict,
+                },
+            )
+    except Exception:
+        pass
+
+
 @router.post("/screen", response_model=ScreeningResult)
 async def screen_fiat_payment(
     req: ScreeningRequest,
@@ -132,8 +183,26 @@ async def screen_fiat_payment(
     )
 
     # ── Track B factors ────────────────────────────────────────────────────
-    entity_risk_base = er_result.get("entity_risk_flags_score", 0.0)
-    entity_risk_with_multiplier = min(1.0, entity_risk_base * country_risk_multiplier)
+    entity_risk_from_er = er_result.get("entity_risk_flags_score", 0.0)
+    ubo_str = er_result.get("ubo_resolution_status", UBOResolutionStatus.FULL.value)
+    # Use deterministic metadata-driven score; take max with entity-resolution score
+    entity_risk_meta = entity_risk_from_metadata(
+        amount_usd=payment.amount_usd,
+        originator_country=payment.originator_country,
+        beneficiary_country=payment.beneficiary_country,
+        entity_type=payment.entity_type,
+        country_risk_multiplier=country_risk_multiplier,
+        ubo_resolution_status=ubo_str,
+    )
+    entity_risk_with_multiplier = max(entity_risk_from_er, entity_risk_meta)
+
+    # Register entity in graph (fire-and-forget; graph engine uses its own verdict later)
+    track_a_str = "NO_MATCH"
+    if identity_confirmed:
+        track_a_str = "MATCH"
+    elif identity_partial:
+        track_a_str = "REVIEW"
+    await _ingest_graph(payment_id, payment, er_result, track_a_str)
 
     network_score: float = 0.0
     graph_result: dict = {}
@@ -184,6 +253,8 @@ async def screen_fiat_payment(
     await request.app.state.explanation_store.put(payment_id, explanation_record)
 
     background_tasks.add_task(_post_audit, payment_id, verdict, payment)
+    if verdict.verdict == VerdictEnum.REVIEW:
+        background_tasks.add_task(_enqueue_review, payment_id, verdict, payment)
 
     elapsed_ms = (time.monotonic() - start) * 1000
     return ScreeningResult(

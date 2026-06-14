@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import crypto, explanation, fiat
+from app.routers import challenge_routes, crypto, explanation, fiat
 from app.store import InMemoryExplanationStore, RedisExplanationStore
 
 
@@ -37,6 +37,7 @@ app.add_middleware(
 app.include_router(fiat.router)
 app.include_router(crypto.router)
 app.include_router(explanation.router)
+app.include_router(challenge_routes.router)
 
 
 @app.get("/health")

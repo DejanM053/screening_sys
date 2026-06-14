@@ -26,6 +26,34 @@ from app.config import settings
 router = APIRouter(prefix="/crypto", tags=["crypto-screening"])
 
 
+async def _enqueue_review(payment_id: str, verdict, payment: Payment, wallet_result: dict) -> None:
+    policy_flag_names = []
+    if verdict.policy_flags.mica_compliance_risk:
+        policy_flag_names.append("MiCA_COMPLIANCE_RISK")
+    if verdict.policy_flags.tron_eu_corridor_review:
+        policy_flag_names.append("TRON_EU_CORRIDOR_REVIEW")
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{settings.review_queue_url}/enqueue",
+                json={
+                    "payment_id": payment_id,
+                    "entity_id": payment_id,
+                    "entity_name": payment.originator_name,
+                    "score": verdict.composite_score,
+                    "country": payment.originator_country,
+                    "lists_flagged": [verdict.cause] if verdict.cause else [],
+                    "transfer_type": "OUTBOUND",
+                    "ubo_resolution_status": verdict.ubo_resolution_status.value,
+                    "policy_flags": policy_flag_names,
+                    "amount_usd": payment.amount_usd,
+                    "track": verdict.track.value,
+                },
+            )
+    except Exception:
+        pass
+
+
 class CryptoScreenRequest(BaseModel):
     payment: Payment
     stablecoin: str = "USDT"
@@ -119,6 +147,9 @@ async def screen_crypto_payment(
         screened_at=verdict.screened_at.isoformat(),
     )
     await request.app.state.explanation_store.put(payment_id, explanation_record)
+
+    if verdict.verdict == VerdictEnum.REVIEW:
+        background_tasks.add_task(_enqueue_review, payment_id, verdict, payment, wallet_result)
 
     elapsed_ms = (time.monotonic() - start) * 1000
     return ScreeningResult(

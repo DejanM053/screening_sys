@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     crypto_screener_url: str = "http://crypto-screener:8004"
     llm_service_url: str = "http://llm-service:8006"
     audit_trail_url: str = "http://audit-trail:8008"
+    review_queue_url: str = "http://review-queue:8009"
     redis_url: str = "redis://redis:6379"
     postgres_url: str = "postgresql://sanctions:sanctions_pass@postgres:5432/sanctions_db"
 

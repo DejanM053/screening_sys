@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 from app.fuzzy.matcher import FuzzyMatcher, PhoneticMatcher, MatchCandidate
+from app.opensanctions import match_opensanctions
 from app.transliteration.normalizer import TransliterationNormalizer
 
 
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     elasticsearch_url: str = "http://elasticsearch:9200"
     redis_url: str = "redis://redis:6379"
     cache_ttl_seconds: int = 3600
+    opensanctions_api_key: str = ""
 
     class Config:
         env_file = ".env"
@@ -38,7 +40,10 @@ _es: Optional[AsyncElasticsearch] = None
 async def startup() -> None:
     global _redis, _es
     _redis = await aioredis.from_url(settings.redis_url, decode_responses=True)
-    _es = AsyncElasticsearch([settings.elasticsearch_url])
+    try:
+        _es = AsyncElasticsearch([settings.elasticsearch_url])
+    except Exception:
+        _es = None  # no aiohttp or ES not configured — falls back to OpenSanctions API
 
 
 @app.on_event("shutdown")
@@ -127,6 +132,14 @@ async def match_entity(req: MatchRequest) -> MatchResponse:
                 })
         except Exception:
             pass
+
+    # ── OpenSanctions API fallback when ES returns no candidates ─────────────
+    if not candidates:
+        candidates = await match_opensanctions(
+            name=req.name,
+            country=req.country,
+            entity_type=req.entity_type,
+        )
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
     top_score = candidates[0]["score"] if candidates else 0.0

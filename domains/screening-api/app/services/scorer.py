@@ -61,6 +61,51 @@ def compute_composite(factors: RawFactors) -> ScoreBreakdown:
     )
 
 
+def entity_risk_from_metadata(
+    amount_usd: float,
+    originator_country: str,
+    beneficiary_country: str,
+    entity_type: str,
+    country_risk_multiplier: float = 1.0,
+    ubo_resolution_status: str = "FULL",
+) -> float:
+    """Deterministic entity risk score from payment metadata (Factor 4, 15%).
+
+    Produces a non-zero baseline so the demo shows meaningful scores even
+    when entity-resolution has no list matches.
+    """
+    score = 0.0
+
+    # High-value payment risk
+    if amount_usd >= 1_000_000:
+        score += 0.3
+    elif amount_usd >= 100_000:
+        score += 0.15
+    elif amount_usd >= 10_000:
+        score += 0.05
+
+    # UBO resolution status
+    if ubo_resolution_status == "UNRESOLVED":
+        score += 0.4
+    elif ubo_resolution_status == "PARTIAL":
+        score += 0.2
+
+    # Cross-border uplift for high-risk corridors (not BLACK tier, but elevated)
+    _elevated = {"IR", "KP", "SY", "MM", "CU", "BY", "SD", "RU"}
+    if originator_country in _elevated or beneficiary_country in _elevated:
+        score += 0.5  # handled by auto_block; add less here to avoid double-count
+    elif originator_country != beneficiary_country:
+        score += 0.05
+
+    # Apply country risk multiplier from regulatory engine
+    score = min(1.0, score * max(country_risk_multiplier, 1.0))
+
+    # Base noise floor so the factor always contributes a little
+    score = max(score, 0.05)
+
+    return _clamp01(score)
+
+
 def beta_binomial_smoothed_rate(
     n_screen: int,
     k_true: int,
