@@ -37,6 +37,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { challengeApi, SimilarCase, ChallengeResult, GeoContext } from '../api/challenge';
+import { Case } from '../data/cases';
 
 // ── Hardcoded geopolitical context (presenter: "pulled from live feeds in prod") ──
 const GEO_TABLE: Record<string, Omit<GeoContext, never>> = {
@@ -116,35 +117,74 @@ const initialForm = (): FormState => ({
   risk_scores: { source_of_wealth: 5, document_consistency: 5, counterparty_opacity: 5, relationship_novelty: 5 },
 });
 
-const DEMO_FORM: FormState = {
-  transaction_id: 'REVIEW-TXN-' + Math.random().toString(36).slice(2, 7).toUpperCase(),
-  amount: '3500000', currency: 'EUR',
-  value_date: new Date().toISOString().slice(0, 10),
-  product_type: 'trade_finance', direction: 'outbound',
-  has_trade_context: true,
-  goods_description: 'industrial valve components and hydraulic pressure systems',
-  hs_code: '8481.80', dual_use_flag: true,
-  invoice_amount: '3420000', shipment_country: 'AE',
-  originator: {
-    entity_name: 'Prague Industrial Exports s.r.o.',
-    entity_type: 'company',
-    country_of_incorporation: 'CZ', account_country: 'CZ',
-    registration_age_days: 2920, is_pep: false, ownership_opacity_score: 0.18,
-  },
-  beneficiary: {
-    entity_name: 'Al Mansouri General Trading LLC',
-    entity_type: 'company',
-    country_of_incorporation: 'AE', account_country: 'AE',
-    registration_age_days: 210, is_pep: false, ownership_opacity_score: 0.62,
-  },
-  relationship_tenure_days: '30',
-  first_transaction_to_counterparty: true,
-  referral_origin: 'cold_contact',
-  typology_tags: ['trade_based_ml', 'sanctions_adjacent'],
-  reviewer_verdict: 'blocked',
-  reviewer_rationale: 'New counterparty registered 7 months ago. Dual-use pressure valve components (HS 8481.80, Wassenaar-listed). No end-user certificate. AE re-export risk flagged by BIS MEP-2024-07. Blocking pending EUC and UBO verification.',
-  risk_scores: { source_of_wealth: 5.0, document_consistency: 5.5, counterparty_opacity: 8.0, relationship_novelty: 9.5 },
-};
+// Derive a pre-filled form from real case data already in the frontend.
+function caseToForm(c: Case, paymentId: string): FormState {
+  const parts = (c.pay.corridor || '').split('→').map(s => s.trim());
+  const originCode = (parts[0] || '').slice(0, 2).toUpperCase();
+  const destCode   = (parts[1] || '').slice(0, 2).toUpperCase();
+
+  const uboOpacity = (ubo: string) =>
+    ubo === 'FULL' ? 0.10 : ubo === 'PARTIAL' ? 0.40 : ubo === 'EXTERNAL' ? 0.60 : 0.78;
+
+  const railToProduct = (rail: string) =>
+    /tron|usdt|btc|eth|crypto/i.test(rail) ? 'crypto' : 'wire_transfer';
+
+  const rawAmount = (c.pay.amount || '').replace(/[^0-9]/g, '');
+  const currencyMatch = (c.pay.amount || '').match(/[A-Z]{3,}/);
+  const currency = currencyMatch ? currencyMatch[0] : 'USD';
+
+  const verdictToReview = (v: string) =>
+    v === 'NO_MATCH' ? 'approved' : 'blocked';
+
+  // Derive risk scores from case factor scores (factors are 0-1; form uses 0-10)
+  const f = c.factors || [];
+  const score = (idx: number) => f[idx] ? Math.round(f[idx].score * 10) : 5;
+
+  // Tags from case flags + factor signals
+  const tags: string[] = [];
+  if ((c.flags || []).some(fl => /MiCA|tron|crypto/i.test(fl))) tags.push('crypto_layering');
+  if (c.track?.includes('50pct') || (f[2]?.score || 0) > 0.5) tags.push('sanctions_adjacent');
+  if ((f[1]?.score || 0) > 0.5) tags.push('structuring');
+  if ((f[0]?.score || 0) > 0.5) tags.push('layering');
+
+  return {
+    ...initialForm(),
+    transaction_id: paymentId,
+    amount: rawAmount,
+    currency,
+    value_date: new Date().toISOString().slice(0, 10),
+    product_type: railToProduct(c.pay.rail || ''),
+    direction: (c.transfer || 'outbound').toLowerCase() as 'inbound' | 'outbound',
+    originator: {
+      entity_name: c.pay.senderName || '',
+      entity_type: 'company',
+      country_of_incorporation: originCode,
+      account_country: originCode,
+      registration_age_days: 0,
+      is_pep: false,
+      ownership_opacity_score: uboOpacity(c.pay.senderUbo || ''),
+    },
+    beneficiary: {
+      entity_name: c.pay.receiverName || '',
+      entity_type: 'company',
+      country_of_incorporation: destCode,
+      account_country: destCode,
+      registration_age_days: 0,
+      is_pep: false,
+      ownership_opacity_score: uboOpacity(c.pay.receiverUbo || ''),
+    },
+    has_trade_context: false,
+    typology_tags: tags,
+    reviewer_verdict: verdictToReview(c.verdict),
+    reviewer_rationale: '',
+    risk_scores: {
+      source_of_wealth: score(3),
+      document_consistency: score(4),
+      counterparty_opacity: score(2),
+      relationship_novelty: 5,
+    },
+  };
+}
 
 // ── XML builder ───────────────────────────────────────────────────────────────
 
@@ -331,6 +371,7 @@ function FatfBadge({ status }: { status: string }) {
 
 export interface ChallengeReviewPanelProps {
   paymentId: string;
+  caseData?: Case;
   onClose: () => void;
   onChallengeOpened?: (challengeId: string) => void;
   onChallengeResponded?: (challengeId: string) => void;
@@ -338,12 +379,15 @@ export interface ChallengeReviewPanelProps {
 
 export function ChallengeReviewPanel({
   paymentId,
+  caseData,
   onClose,
   onChallengeOpened,
   onChallengeResponded,
 }: ChallengeReviewPanelProps) {
   const [step, setStep] = useState<Step>('form');
-  const [form, setForm] = useState<FormState>(() => ({ ...initialForm(), transaction_id: paymentId }));
+  const [form, setForm] = useState<FormState>(() =>
+    caseData ? caseToForm(caseData, paymentId) : { ...initialForm(), transaction_id: paymentId }
+  );
   const [caseId, setCaseId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -377,7 +421,12 @@ export function ChallengeReviewPanel({
   // Character-by-character demo fill — realistic typing with natural pauses.
   const runDemo = useCallback(async () => {
     setDemoRunning(true);
-    const base = { ...DEMO_FORM, transaction_id: 'REVIEW-TXN-' + Date.now().toString(36).toUpperCase() };
+    // Use real case data if available, otherwise fall back to a blank form
+    const base: FormState = caseData
+      ? caseToForm(caseData, paymentId)
+      : { ...initialForm(), transaction_id: 'REVIEW-TXN-' + Date.now().toString(36).toUpperCase() };
+    // Reset form to empty so the typing animation starts from scratch
+    setForm({ ...initialForm(), transaction_id: '' });
 
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
     // jitter makes it feel human: base speed ± up to 40% variance
@@ -616,7 +665,7 @@ export function ChallengeReviewPanel({
                     Finding similar cases…
                   </>
                 ) : (
-                  <>⚡ Auto-fill &amp; Run Demo</>
+                  <>Auto-fill from case &amp; find similar</>
                 )}
               </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
@@ -856,7 +905,7 @@ export function ChallengeReviewPanel({
                       <button
                         onClick={() => openChallenge(sc)}
                         style={{ width: '100%', background: '#FCEBEB', color: '#DC2626', border: '1.5px solid #F3C9C9', borderRadius: 8, padding: '9px 14px', font: "700 12px 'Hanken Grotesk'", cursor: 'pointer', marginTop: 4 }}>
-                        ⚡ This contradicts my draft verdict — open challenge
+                        Contradicts draft verdict — open challenge
                       </button>
                     )}
                   </div>
@@ -868,6 +917,24 @@ export function ChallengeReviewPanel({
           {/* ── STEP 3: Challenge modal contents ────────────────────────── */}
           {step === 'challenge' && activeSimilar && (
             <div>
+              {/* Verdict tension banner */}
+              {(() => {
+                const draftS  = VERDICT_STYLE[form.reviewer_verdict]  || { bg: '#F4F6F8', color: '#757B86', label: (form.reviewer_verdict  || '').toUpperCase() };
+                const precS   = VERDICT_STYLE[activeSimilar.reviewer_verdict] || { bg: '#F4F6F8', color: '#757B86', label: (activeSimilar.reviewer_verdict || '').toUpperCase() };
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10, marginBottom: 16, background: '#FAFBFC', border: '1.5px solid #E1E4E9', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ font: "500 10px 'Hanken Grotesk'", color: '#9AA0AA', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 5 }}>Your draft</div>
+                      <div style={{ background: draftS.bg, color: draftS.color, border: `1.5px solid ${draftS.color}40`, borderRadius: 7, padding: '7px 14px', font: "800 13px 'Hanken Grotesk'", letterSpacing: '.04em' }}>{draftS.label}</div>
+                    </div>
+                    <div style={{ font: "700 11px 'Hanken Grotesk'", color: '#B4BAC2' }}>vs</div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ font: "500 10px 'Hanken Grotesk'", color: '#9AA0AA', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 5 }}>Precedent verdict</div>
+                      <div style={{ background: precS.bg, color: precS.color, border: `1.5px solid ${precS.color}40`, borderRadius: 7, padding: '7px 14px', font: "800 13px 'Hanken Grotesk'", letterSpacing: '.04em' }}>{precS.label}</div>
+                    </div>
+                  </div>
+                );
+              })()}
               {/* Side-by-side summary */}
               <SectionHeader title="Case Comparison" />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
@@ -958,7 +1025,7 @@ export function ChallengeReviewPanel({
                     </>
                   ) : (
                     <div style={{ background: '#E9F6EE', border: '1px solid #BFE4CC', borderRadius: 9, padding: 14, textAlign: 'center', font: "700 13px 'Hanken Grotesk'", color: '#16A34A' }}>
-                      ✓ Response recorded. You may now proceed to your verdict.
+                      Response recorded. You may now proceed to your verdict.
                     </div>
                   )}
                 </>

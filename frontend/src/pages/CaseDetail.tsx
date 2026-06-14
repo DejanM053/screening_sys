@@ -101,7 +101,7 @@ export function CaseDetail({ cases, activeId, drafts, setDraft, decisions, setDe
               <button key={a.label} className="gs-act" onClick={a.onClick} style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.fg, font: "700 11.5px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '9px 13px', borderRadius: 8 }}>{a.label}</button>
             ))}
             {onChallenge && (
-              <button onClick={onChallenge} style={{ border: '1px solid #E1E4E9', background: '#F4F6F8', color: '#41464F', font: "700 11.5px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '9px 13px', borderRadius: 8, cursor: 'pointer' }}>Challenge Review ⚡</button>
+              <button onClick={onChallenge} style={{ border: '1px solid #E1E4E9', background: '#F4F6F8', color: '#41464F', font: "700 11.5px 'Hanken Grotesk'", letterSpacing: '.01em', padding: '9px 13px', borderRadius: 8, cursor: 'pointer' }}>Challenge Review</button>
             )}
           </div>
         </div>

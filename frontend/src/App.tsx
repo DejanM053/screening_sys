@@ -83,6 +83,7 @@ export default function App() {
           {showChallenge && (
             <ChallengeReviewPanel
               paymentId={activeId}
+              caseData={DEMO_CASES.find(c => c.id === activeId)}
               onClose={() => setShowChallenge(false)}
               onChallengeOpened={(id) => setOpenChallengeIds(ids => [...ids, id])}
               onChallengeResponded={(id) => setOpenChallengeIds(ids => ids.filter(x => x !== id))}
