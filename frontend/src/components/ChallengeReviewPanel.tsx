@@ -35,7 +35,7 @@
 //     </>
 //   )}
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { challengeApi, SimilarCase, ChallengeResult, GeoContext } from '../api/challenge';
 
 // ── Hardcoded geopolitical context (presenter: "pulled from live feeds in prod") ──
@@ -360,6 +360,19 @@ export function ChallengeReviewPanel({
   const [submittingResponse, setSubmittingResponse] = useState(false);
   const [responseSubmitted, setResponseSubmitted] = useState(false);
   const [demoRunning, setDemoRunning] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (generatingChallenge) {
+      setElapsed(0);
+      elapsedRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
+    } else {
+      if (elapsedRef.current) clearInterval(elapsedRef.current);
+      setElapsed(0);
+    }
+    return () => { if (elapsedRef.current) clearInterval(elapsedRef.current); };
+  }, [generatingChallenge]);
 
   // Typewriter-style demo fill: reveal each field with a short delay so
   // the audience can see the form being "completed" before auto-submit.
@@ -369,14 +382,14 @@ export function ChallengeReviewPanel({
 
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-    setForm(f => ({ ...f, transaction_id: base.transaction_id })); await delay(180);
-    setForm(f => ({ ...f, amount: base.amount, currency: base.currency })); await delay(180);
-    setForm(f => ({ ...f, product_type: base.product_type, direction: base.direction, has_trade_context: true })); await delay(200);
-    setForm(f => ({ ...f, originator: base.originator })); await delay(250);
-    setForm(f => ({ ...f, beneficiary: base.beneficiary })); await delay(250);
-    setForm(f => ({ ...f, goods_description: base.goods_description, hs_code: base.hs_code, dual_use_flag: true, invoice_amount: base.invoice_amount, shipment_country: base.shipment_country })); await delay(200);
-    setForm(f => ({ ...f, relationship_tenure_days: base.relationship_tenure_days, first_transaction_to_counterparty: true, referral_origin: base.referral_origin })); await delay(200);
-    setForm(f => ({ ...f, typology_tags: base.typology_tags, risk_scores: base.risk_scores, reviewer_verdict: base.reviewer_verdict, reviewer_rationale: base.reviewer_rationale })); await delay(300);
+    setForm(f => ({ ...f, transaction_id: base.transaction_id })); await delay(600);
+    setForm(f => ({ ...f, amount: base.amount, currency: base.currency })); await delay(600);
+    setForm(f => ({ ...f, product_type: base.product_type, direction: base.direction, has_trade_context: true })); await delay(700);
+    setForm(f => ({ ...f, originator: base.originator })); await delay(900);
+    setForm(f => ({ ...f, beneficiary: base.beneficiary })); await delay(900);
+    setForm(f => ({ ...f, goods_description: base.goods_description, hs_code: base.hs_code, dual_use_flag: true, invoice_amount: base.invoice_amount, shipment_country: base.shipment_country })); await delay(800);
+    setForm(f => ({ ...f, relationship_tenure_days: base.relationship_tenure_days, first_transaction_to_counterparty: true, referral_origin: base.referral_origin })); await delay(700);
+    setForm(f => ({ ...f, typology_tags: base.typology_tags, risk_scores: base.risk_scores, reviewer_verdict: base.reviewer_verdict, reviewer_rationale: base.reviewer_rationale })); await delay(900);
 
     // auto-submit
     setSubmitting(true);
@@ -837,9 +850,13 @@ export function ChallengeReviewPanel({
               )}
 
               {generatingChallenge && (
-                <div style={{ textAlign: 'center', padding: '20px 0', font: "500 12px 'Hanken Grotesk'", color: '#9AA0AA' }}>
-                  <div style={{ marginBottom: 8 }}>Ollama is analysing the tension…</div>
-                  <div style={{ display: 'inline-block', width: 20, height: 20, border: '2px solid #E1E4E9', borderTopColor: '#14171C', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                <div style={{ background: '#F7F8FA', border: '1px solid #EEF0F3', borderRadius: 10, padding: '20px 16px', marginBottom: 12, textAlign: 'center' }}>
+                  <div style={{ display: 'inline-block', width: 22, height: 22, border: '2.5px solid #E1E4E9', borderTopColor: '#14171C', borderRadius: '50%', animation: 'spin 0.7s linear infinite', marginBottom: 12 }} />
+                  <div style={{ font: "700 13px 'Hanken Grotesk'", color: '#14171C', marginBottom: 4 }}>Ollama is analysing the tension…</div>
+                  <div style={{ font: "500 12px 'JetBrains Mono'", color: '#9AA0AA', marginBottom: 10 }}>{elapsed}s elapsed · typically 15–25s</div>
+                  <div style={{ height: 4, background: '#E1E4E9', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: 'linear-gradient(90deg,#2C7BE5,#14171C)', borderRadius: 4, width: `${Math.min((elapsed / 25) * 100, 95)}%`, transition: 'width 1s linear' }} />
+                  </div>
                 </div>
               )}
 
